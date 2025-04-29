@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 COPY package*.json ./
 
 # Install dependencies with more verbose output
-RUN npm ci --verbose
+RUN npm install --verbose
 
 # Copy source code
 COPY . .
@@ -33,9 +33,7 @@ WORKDIR /app
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
-
-# Install production dependencies only with more verbose output
-RUN npm ci --only=production --verbose
+COPY --from=builder /app/node_modules ./node_modules
 
 # Create a non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
