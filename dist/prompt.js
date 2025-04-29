@@ -1,6 +1,6 @@
-import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import OpenAI from "openai";
 import { convertMcpToolsToOpenAiFormat, handleStreamingConversation as handleStreamingConversationUtil, } from "./utils/utils.js";
 // Initialize OpenAI client
 const openai = new OpenAI({

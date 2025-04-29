@@ -7,7 +7,7 @@ console.log("Environment variables:");
 console.log("OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "Set" : "Not set");
 console.log("OPENAI_BASE_URL:", process.env.OPENAI_BASE_URL);
 const app = express();
-const port = 3000;
+const port = 80;
 // Middleware
 app.use(cors());
 app.use(express.json());
