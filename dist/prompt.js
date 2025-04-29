@@ -11,59 +11,38 @@ const openai = new OpenAI({
 console.log("API Configuration:");
 console.log("Base URL:", process.env.OPENAI_BASE_URL);
 console.log("Full chat completions URL:", `${process.env.OPENAI_BASE_URL}/chat/completions`);
-// Tool definitions for LLM
-const toolDefinitions = [
-    {
-        name: "get_local_maps",
-        description: "Retrieve list of local maps",
-        inputSchema: {
-            type: "object",
-            properties: {},
-            required: [],
-        },
-    },
-    {
-        name: "get_current_map",
-        description: "Retrieve the current map ID",
-        inputSchema: {
-            type: "object",
-            properties: {},
-            required: [],
-        },
-    },
-    {
-        name: "get_destinations",
-        description: "Retrieve list of current map destinations",
-        inputSchema: {
-            type: "object",
-            properties: {},
-            required: [],
-        },
-    },
-    {
-        name: "navigate_to_destination",
-        description: "Navigate to a destination by name",
-        inputSchema: {
-            type: "object",
-            properties: {
-                destinationName: {
-                    type: "string",
-                    description: "Name of destination (e.g., table_091)",
-                },
-            },
-            required: ["destinationName"],
-        },
-    },
-    {
-        name: "take_picture",
-        description: "Take a picture using the device camera and return Base64 string",
-        inputSchema: {
-            type: "object",
-            properties: {},
-            required: [],
-        },
-    },
-];
+// Function to fetch tool definitions from MCP
+async function fetchToolDefinitions() {
+    try {
+        console.log("\n=== Fetching Tool Definitions ===");
+        console.log("Creating client connection...");
+        const { transport, client } = createClientConnection();
+        console.log("Connecting to transport...");
+        await client.connect(transport);
+        console.log("Connected successfully");
+        console.log("Calling listTools...");
+        const response = await client.listTools();
+        console.log("Raw tool list response:", JSON.stringify(response, null, 2));
+        if (!response || !response.tools || !Array.isArray(response.tools)) {
+            console.error("Invalid response format:", response);
+            throw new Error("Invalid response from listTools");
+        }
+        console.log(`Successfully fetched ${response.tools.length} tools`);
+        return response.tools;
+    }
+    catch (error) {
+        console.error("\n=== Error in fetchToolDefinitions ===");
+        console.error("Error type:", error?.constructor?.name || "Unknown");
+        console.error("Error message:", error?.message || "Unknown error");
+        if (error?.code) {
+            console.error("Error code:", error.code);
+        }
+        if (error?.data) {
+            console.error("Error data:", error.data);
+        }
+        throw new Error("Failed to fetch tool definitions from MCP");
+    }
+}
 // Function to create a new client connection
 function createClientConnection() {
     const transport = new StdioClientTransport({
@@ -109,13 +88,15 @@ export const prompt = async (payload) => {
         if (!payload.messages?.length) {
             throw new Error("No messages provided in payload");
         }
+        // Fetch tool definitions dynamically
+        const toolDefinitions = await fetchToolDefinitions();
         // Convert tools to OpenAI format
         const openAiTools = convertMcpToolsToOpenAiFormat(toolDefinitions);
         // Initialize messages array for conversation
         const messages = [
             {
                 role: "system",
-                content: "You are an AI assistant with access to robot control tools. You can use these tools to help users navigate and interact with the robot environment. When users ask you to do something, use the appropriate tools to help them. Don't ask for more information unless absolutely necessary. Use the tools provided in the tools array, not by writing code. For example, if user asks to go to a location, use the navigate_to_destination tool.",
+                content: "If you don't see any location, please search for that location and then navigate to it",
             },
             ...payload.messages.map((msg) => {
                 const content = typeof msg.content === "string"

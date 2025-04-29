@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
-  apiKey: "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",
+  apiKey: "",
 });
 
 // Tool definitions for LLM
