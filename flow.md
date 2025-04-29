@@ -78,3 +78,7 @@ curl -X POST http://localhost:3000/api/prompt \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "Chạy lại chỗ lấy đồ"}]}'
 ``` 
+
+## Docker
+docker build -t soul-rover .
+docker run -p 80:80 --env-file .env soul-rover
