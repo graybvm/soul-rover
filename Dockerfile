@@ -4,19 +4,11 @@ FROM node:20.11.1-slim AS builder
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+# Copy package.json only
+COPY package.json ./
 
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies with more verbose output
-RUN npm install --verbose
+# Install dependencies
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -30,10 +22,14 @@ FROM node:20.11.1-slim
 # Set working directory
 WORKDIR /app
 
+# Copy package.json only
+COPY package.json ./
+
+# Install production dependencies only
+RUN npm install --production
+
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
 
 # Create a non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
