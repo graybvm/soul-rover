@@ -31,18 +31,15 @@ RUN npm install --production
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
 
-# Create a non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create non-root user with home directory
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 --home /home/nodeuser nodeuser
 
-# Set environment variables
-ENV NODE_ENV=production
-ENV OPENAI_BASE_URL=http://localmodel:65534/v1
-
-# Change ownership of the app directory
-RUN chown -R appuser:appuser /app
+# Set ownership
+RUN chown -R nodeuser:nodejs /app
 
 # Switch to non-root user
-USER appuser
+USER nodeuser
 
 # Expose port
 EXPOSE 80

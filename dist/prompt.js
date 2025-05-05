@@ -2,15 +2,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import OpenAI from "openai";
 import { convertMcpToolsToOpenAiFormat, handleStreamingConversation as handleStreamingConversationUtil, } from "./utils/utils.js";
+const openAIUrl = "http://localmodel:65534/v1";
 // Initialize OpenAI client
 const openai = new OpenAI({
-    baseURL: process.env.OPENAI_BASE_URL,
+    apiKey: "zzzz",
+    baseURL: openAIUrl,
     maxRetries: 3,
 });
 // Log API configuration
 console.log("API Configuration:");
-console.log("Base URL:", process.env.OPENAI_BASE_URL);
-console.log("Full chat completions URL:", `${process.env.OPENAI_BASE_URL}/chat/completions`);
+console.log("Base URL:", openAIUrl);
+console.log("Full chat completions URL:", `${openAIUrl}/chat/completions`);
 // Function to fetch tool definitions from MCP
 async function fetchToolDefinitions() {
     try {
@@ -83,6 +85,9 @@ async function executeRobotTool(toolName, parameters) {
 }
 export const prompt = async (payload) => {
     try {
+        if (!!payload.ping) {
+            return "online";
+        }
         console.log("\n=== Starting Prompt Processing ===");
         console.log("User message:", payload.messages?.[0]?.content);
         if (!payload.messages?.length) {
@@ -109,7 +114,7 @@ export const prompt = async (payload) => {
             }),
         ];
         // Handle streaming vs non-streaming
-        const isStreaming = "stream" in payload && payload.stream === true;
+        const isStreaming = false;
         if (isStreaming) {
             return new ReadableStream({
                 async start(controller) {

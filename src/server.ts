@@ -47,11 +47,13 @@ app.get("/api/version", (req, res) => {
 });
 
 // Prompt endpoint
-app.post("/api/prompt", async (req, res) => {
+app.post("/prompt", async (req, res) => {
   try {
     const payload: PromptPayload = req.body;
     const result = await prompt(payload);
-    res.json({ result });
+    console.log(result);
+    res.setHeader("Content-Type", "text/plain");
+    res.send(result);
   } catch (error) {
     console.error("Error in prompt endpoint:", error);
     res.status(500).json({

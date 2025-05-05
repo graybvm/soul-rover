@@ -7,20 +7,19 @@ import {
   handleStreamingConversation as handleStreamingConversationUtil,
   McpTool,
 } from "./utils/utils.js";
+const openAIUrl = "http://localmodel:65534/v1";
 
 // Initialize OpenAI client
 const openai = new OpenAI({
-  baseURL: process.env.OPENAI_BASE_URL,
+  apiKey: "zzzz",
+  baseURL: openAIUrl,
   maxRetries: 3,
 });
 
 // Log API configuration
 console.log("API Configuration:");
-console.log("Base URL:", process.env.OPENAI_BASE_URL);
-console.log(
-  "Full chat completions URL:",
-  `${process.env.OPENAI_BASE_URL}/chat/completions`
-);
+console.log("Base URL:", openAIUrl);
+console.log("Full chat completions URL:", `${openAIUrl}/chat/completions`);
 
 // Function to fetch tool definitions from MCP
 async function fetchToolDefinitions(): Promise<McpTool[]> {
@@ -106,6 +105,10 @@ export const prompt = async (
   payload: PromptPayload
 ): Promise<string | ReadableStream<Uint8Array>> => {
   try {
+    if (!!payload.ping) {
+      return "online";
+    }
+
     console.log("\n=== Starting Prompt Processing ===");
     console.log("User message:", payload.messages?.[0]?.content);
 
@@ -139,7 +142,7 @@ export const prompt = async (
     ];
 
     // Handle streaming vs non-streaming
-    const isStreaming = "stream" in payload && payload.stream === true;
+    const isStreaming = false;
 
     if (isStreaming) {
       return new ReadableStream({
