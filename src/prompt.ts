@@ -7,7 +7,8 @@ import {
   handleStreamingConversation as handleStreamingConversationUtil,
   McpTool,
 } from "./utils/utils.js";
-const openAIUrl = "http://localmodel:65534/v1";
+// const openAIUrl = "http://localmodel:65534/v1";
+const openAIUrl = "http://localhost:65534/v1";
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -186,14 +187,75 @@ export const prompt = async (
           const message = response.choices[0].message;
 
           if (message.tool_calls) {
+            let hasImageResult = false;
             for (const toolCall of message.tool_calls) {
               if (toolCall.function?.name && toolCall.function?.arguments) {
                 try {
-                  const parsedArgs = JSON.parse(toolCall.function.arguments);
-                  const result = await executeRobotTool(
-                    toolCall.function.name,
-                    parsedArgs
+                  let parsedArgs = JSON.parse(toolCall.function.arguments);
+                  let result;
+
+                  // If the tool call is to navigateTo, search for locations
+                  if (toolCall.function.name === "navigate_to_destination") {
+                    const locationQuery = parsedArgs.location || parsedArgs.destination;
+                    if (locationQuery) {
+                      // Call tool to search for locations
+                      const searchResult = await executeRobotTool("get_destinations", {
+                        query: locationQuery,
+                      });
+                      const searchResultParsed = JSON.parse(
+                        typeof searchResult === "string" ? searchResult : JSON.stringify(searchResult)
+                      );
+
+                      // Send the list of locations to LLM
+                      const locationsList = searchResultParsed.locations || [];
+                      if (locationsList.length > 0) {
+                        const locationSelectionPrompt: OpenAI.ChatCompletionSystemMessageParam = {
+                          role: "system",
+                          content: `
+                            User requested to navigate to "${locationQuery}". Here is a list of available locations:
+                            ${locationsList.map((loc: any) => `- ${loc.name}`).join("\n")}
+                            Select the most relevant location name (case-sensitive) that best matches "${locationQuery}". Return only the exact location name.
+                          `,
+                        };
+
+                        // Call LLM to select the best match
+                        const selectionResponse = await openai.chat.completions.create({
+                          model: "gpt-4-turbo-preview",
+                          messages: [
+                            locationSelectionPrompt,
+                            { role: "user", content: `Select the best match for "${locationQuery}".` },
+                          ],
+                          tools: openAiTools,
+                          tool_choice: "auto" as const,
+                        });
+
+                        const selectedLocation = selectionResponse.choices[0].message.content?.trim();
+                        if (selectedLocation) {
+                          // Update parsedArgs with the exact location name
+                          parsedArgs.location = selectedLocation;
+                        } else {
+                          throw new Error(`No matching location found for "${locationQuery}".`);
+                        }
+                      } else {
+                        throw new Error(`No locations found for query "${locationQuery}".`);
+                      }
+                    }
+                  }
+
+                  // Execute tool with standardized arguments
+                  result = await executeRobotTool(toolCall.function.name, parsedArgs);
+
+                  // Check if tool returned an image
+                  const toolResult = JSON.parse(
+                    typeof result === "string" ? result : JSON.stringify(result)
                   );
+                  const imageContent = toolResult.content?.find(
+                    (item: any) => item.type === "image" && item.mimeType === "image/jpeg"
+                  );
+
+                  if (imageContent && imageContent.data) {
+                    hasImageResult = true;
+                  }
 
                   messages.push({
                     role: "assistant",
@@ -207,16 +269,109 @@ export const prompt = async (
                     content: JSON.stringify(result),
                   });
                 } catch (error) {
-                  console.error(
-                    `Error executing tool ${toolCall.function.name}:`,
-                    error
-                  );
+                  console.error(`Error executing tool ${toolCall.function.name}:`, error);
+                  // Check if error is an Error object and has a message
+                  const errorMessage = error instanceof Error ? error.message : String(error);
+                  messages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({ error: errorMessage }),
+                  });
                 }
               }
             }
+
+            // Exit loop if an image was received
+            if (hasImageResult) {
+              isProcessing = false;
+              const lastToolMessage = messages
+                .filter((msg) => msg.role === "tool")
+                .pop();
+
+              let responseContent = "Error processing image.";
+              if (lastToolMessage && lastToolMessage.content) {
+                try {
+                  let toolResult;
+                  if (typeof lastToolMessage.content === "string") {
+                    toolResult = JSON.parse(lastToolMessage.content);
+                  } else if (Array.isArray(lastToolMessage.content)) {
+                    const textPart = lastToolMessage.content.find(
+                      (part) => part.type === "text"
+                    );
+                    if (textPart && "text" in textPart) {
+                      toolResult = JSON.parse(textPart.text);
+                    } else {
+                      throw new Error("No valid text content found in tool message");
+                    }
+                  } else {
+                    throw new Error("Unexpected content type in tool message");
+                  }
+
+                  const imageContent = toolResult.content?.find(
+                    (item: any) => item.type === "image" && item.mimeType === "image/jpeg"
+                  );
+
+                  if (imageContent && imageContent.data) {
+                    const base64Image = imageContent.data;
+                    responseContent = `Picture taken!<br><img src="data:image/jpeg;base64,${base64Image}" alt="Captured image" />`;
+                    messages.push({
+                      role: "assistant",
+                      content: responseContent,
+                    });
+                  }
+                } catch (error) {
+                  console.error("Error parsing tool result:", error);
+                }
+              }
+
+              finalText.push(responseContent);
+            }
           } else {
-            finalText.push(message.content || "");
+            let responseContent = message.content || "";
+            const lastToolMessage = messages
+              .filter((msg) => msg.role === "tool")
+              .pop();
+
+            if (lastToolMessage && lastToolMessage.content) {
+              try {
+                let toolResult;
+                if (typeof lastToolMessage.content === "string") {
+                  toolResult = JSON.parse(lastToolMessage.content);
+                } else if (Array.isArray(lastToolMessage.content)) {
+                  const textPart = lastToolMessage.content.find(
+                    (part) => part.type === "text"
+                  );
+                  if (textPart && "text" in textPart) {
+                    toolResult = JSON.parse(textPart.text);
+                  } else {
+                    throw new Error("No valid text content found in tool message");
+                  }
+                } else {
+                  throw new Error("Unexpected content type in tool message");
+                }
+
+                const imageContent = toolResult.content?.find(
+                  (item: any) => item.type === "image" && item.mimeType === "image/jpeg"
+                );
+
+                if (imageContent && imageContent.data) {
+                  const base64Image = imageContent.data;
+                  responseContent = `Picture taken!<br><img src="data:image/jpeg;base64,${base64Image}" alt="Captured image" />`;
+                  messages.push({
+                    role: "assistant",
+                    content: responseContent,
+                  });
+                }
+              } catch (error) {
+                console.error("Error parsing tool result:", error);
+                responseContent = "Error processing image, please try again.";
+              }
+            }
+
+            finalText.push(responseContent);
             isProcessing = false;
+            console.log("message", message);
+            console.log("finalText", finalText);
           }
         } catch (error: any) {
           console.error("\n=== API Error Details ===");
