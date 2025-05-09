@@ -7,8 +7,8 @@ import {
   handleStreamingConversation as handleStreamingConversationUtil,
   McpTool,
 } from "./utils/utils.js";
-// const openAIUrl = "http://localmodel:65534/v1";
-const openAIUrl = "http://localhost:65534/v1";
+const openAIUrl = "http://localmodel:65534/v1";
+// const openAIUrl = "http://localhost:65534/v1";
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -370,8 +370,8 @@ export const prompt = async (
 
             finalText.push(responseContent);
             isProcessing = false;
-            console.log("message", message);
-            console.log("finalText", finalText);
+            // console.log("message", message);
+            // console.log("finalText", finalText);
           }
         } catch (error: any) {
           console.error("\n=== API Error Details ===");
