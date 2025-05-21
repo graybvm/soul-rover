@@ -59,6 +59,44 @@ const toolDefinitions = [
       required: [],
     },
   },
+  {
+    name: "list_food_items",
+    description: "List all food items with full details",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+    output_schema: {
+      type: "array",
+      description: "Array of food objects",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          created_at: { type: "string", format: "date-time" },
+          updated_at: { type: "string", format: "date-time" },
+          name: { type: "string" },
+          desc: { type: "string" },
+          image: { type: "string" },
+          quantity: { type: "number" },
+          price: { type: "number" },
+          status: { type: "number" }
+        },
+        required: [
+          "id",
+          "created_at",
+          "updated_at",
+          "name",
+          "desc",
+          "image",
+          "quantity",
+          "price",
+          "status"
+        ]
+      }
+    }
+  },
 ];
 
 // Function to create a new client connection
@@ -69,7 +107,7 @@ function createClientConnection() {
       "-y",
       "supergateway",
       "--sse",
-      "http://172.168.20.195:8080",
+      "http://172.168.20.176:8080",
       "--timeout",
       "120000",
     ],

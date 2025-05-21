@@ -2,13 +2,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import OpenAI from "openai";
 import { PromptPayload } from "./types.js";
+import fetch from "node-fetch";
 import {
   convertMcpToolsToOpenAiFormat,
   handleStreamingConversation as handleStreamingConversationUtil,
   McpTool,
 } from "./utils/utils.js";
-const openAIUrl = "http://localmodel:65534/v1";
+// const openAIUrl = "http://localmodel:65534/v1";
 // const openAIUrl = "http://localhost:65534/v1";
+const openAIUrl = "https://nvidia4090-9097.eternalai.org/v1"
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -21,6 +23,58 @@ const openai = new OpenAI({
 console.log("API Configuration:");
 console.log("Base URL:", openAIUrl);
 console.log("Full chat completions URL:", `${openAIUrl}/chat/completions`);
+
+
+// Function to fetch tool definitions from both MCP servers
+async function fetchAllToolDefinitions(): Promise<McpTool[]> {
+  // MCP robot
+  const { transport, client } = createClientConnection();
+  await client.connect(transport);
+  const robotToolsRes = await client.listTools();
+  const robotTools = robotToolsRes.tools as McpTool[];
+
+  // MCP food
+  const foodRes = await fetch("https://l2aas-api.newbitcoincity.com/api/food-mcp/jsonrpc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method: "tools/list", params: {}, id: 1 }),
+  });
+  const foodText = await foodRes.text();
+  let foodJson: any;
+  try {
+    foodJson = JSON.parse(foodText);
+  } catch (e) {
+    console.error("Failed to parse food MCP response:", foodText);
+    throw new Error("Food MCP server did not return valid JSON");
+  }
+  const foodTools = (foodJson.result?.tools || []) as McpTool[];
+
+  // Merge,  removing duplicates
+  const allTools = [...robotTools];
+  for (const t of foodTools) {
+    if (!allTools.find((rt) => rt.name === t.name)) allTools.push(t);
+  }
+  return allTools;
+}
+
+// Route tool call đến đúng MCP server
+async function executeTool(toolName: string, args: any) {
+  // Các tool food
+  const foodTools = ["list_food_items", "order_food", "list_order"];
+  if (foodTools.includes(toolName)) {
+    // Gọi MCP food server
+    const foodRes = await fetch("http://localhost:8001/api/food-mcp/jsonrpc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method: toolName, params: args, id: 1 }),
+    });
+    const foodJson = await foodRes.json() as { result?: any };
+    return foodJson.result;
+  } else {
+    // Gọi MCP robot như cũ
+    return await executeRobotTool(toolName, args);
+  }
+}
 
 // Function to fetch tool definitions from MCP
 async function fetchToolDefinitions(): Promise<McpTool[]> {
@@ -41,6 +95,19 @@ async function fetchToolDefinitions(): Promise<McpTool[]> {
       console.error("Invalid response format:", response);
       throw new Error("Invalid response from listTools");
     }
+
+    // food:
+    // Inject tool list_food_items if not exists
+    const tools = response.tools as McpTool[];
+    if (!tools.find(t => t.name === "list_food_items")) {
+      tools.push({
+        name: "list_food_items",
+        description: "Use this tool to get the list of available food, menu, dishes, fruits, or today’s menu. Always use this tool whenever the user asks about food, menu, available dishes, fruits, or what is available to order today.",
+        inputSchema: { type: "object", properties: {}, required: [] }
+      });
+    }
+
+    //
 
     console.log(`Successfully fetched ${response.tools.length} tools`);
     return response.tools as McpTool[];
@@ -66,7 +133,7 @@ function createClientConnection() {
       "-y",
       "supergateway",
       "--sse",
-      "http://172.168.20.195:8080",
+      "http://172.168.20.176:8080",
       "--timeout",
       "120000",
     ],
@@ -118,28 +185,57 @@ export const prompt = async (
     }
 
     // Fetch tool definitions dynamically
-    const toolDefinitions = await fetchToolDefinitions();
+    // const toolDefinitions = await fetchToolDefinitions();
+    const toolDefinitions = await fetchAllToolDefinitions();
 
     // Convert tools to OpenAI format
     const openAiTools = convertMcpToolsToOpenAiFormat(toolDefinitions);
 
     // Initialize messages array for conversation
+    // const messages: OpenAI.ChatCompletionMessageParam[] = [
+      // {
+      //   role: "system",
+      //   content:
+      //     "If you don't see any location, please search for that location and then navigate to it",
+      // },
+      // ...payload.messages.map((msg) => {
+      //   const content =
+      //     typeof msg.content === "string"
+      //       ? msg.content
+      //       : JSON.stringify(msg.content);
+      //   return {
+      //     role: msg.role || "user",
+      //     content,
+      //   } as OpenAI.ChatCompletionMessageParam;
+      // }),
+      // ...payload.messages.map((msg) => {
+      //   const content =
+      //     typeof msg.content === "string"
+      //       ? msg.content
+      //       : JSON.stringify(msg.content);
+      //   return {
+      //     role: msg.role || "user",
+      //     content,
+      //   } as OpenAI.ChatCompletionMessageParam;
+      // }),
+
+
+      
+
+    // ];
+
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       {
         role: "system",
         content:
-          "If you don't see any location, please search for that location and then navigate to it",
+          "You are a restaurant assistant. If the user asks anything about food, menu, dishes, fruits, or today's menu, you MUST use the tool 'list_food_items' to answer. Do NOT answer from your own knowledge. Only use this tool for any food/menu related question.",
       },
-      ...payload.messages.map((msg) => {
-        const content =
-          typeof msg.content === "string"
-            ? msg.content
-            : JSON.stringify(msg.content);
-        return {
-          role: msg.role || "user",
-          content,
-        } as OpenAI.ChatCompletionMessageParam;
-      }),
+      ...(Array.isArray(payload.messages) ? payload.messages : []).map((msg) => ({
+        role: (msg as any).role || "user",
+        content: typeof (msg as any).content === "string"
+          ? (msg as any).content
+          : JSON.stringify((msg as any).content),
+      })),
     ];
 
     // Handle streaming vs non-streaming
@@ -193,6 +289,24 @@ export const prompt = async (
                 try {
                   let parsedArgs = JSON.parse(toolCall.function.arguments);
                   let result;
+
+                  // food:
+                  if (toolCall.function.name === "list_food_items") {
+                    // Execute the tool and ensure result is an array
+                    const foodListResult = await executeTool(toolCall.function.name, parsedArgs);
+                    const foodList: any[] = Array.isArray(foodListResult) ? foodListResult : (foodListResult?.items || []);
+                    if (!Array.isArray(foodList)) {
+                      throw new Error("list_food_items did not return an array of items.");
+                    }
+                    const html = foodList.map((item: any) => `
+                      <div style="margin-bottom:16px">
+                        <img src="${item.image}" alt="${item.name}" style="width:100px;height:100px;object-fit:cover;border-radius:8px" />
+                        <div><b>${item.name}</b></div>
+                        <div>${item.desc || ""}</div>
+                      </div>
+                    `).join("\n");
+                    return html;
+                  }
 
                   // If the tool call is to navigateTo, search for locations
                   if (toolCall.function.name === "navigate_to_destination") {
